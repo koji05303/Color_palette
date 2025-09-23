@@ -3,14 +3,15 @@ import numpy as np
 from sklearn.cluster import KMeans
 from PIL import Image, ImageDraw, ImageFont
 
+# 嘗試使用襯線字體以符合優雅配色卡風格
+
 # 設定
-INPUT_IMAGE_PATH = "input/IMG_0479.jpg"
+INPUT_IMAGE_PATH = input("請輸入圖片路徑：") + ".jpg"
 OUTPUT_IMAGE_PATH = "output/palette_overlay_result.png"
 NUM_COLORS = 5
 PALETTE_WIDTH_RATIO = 0.3
 PALETTE_HEIGHT_RATIO = 0.15  # 調整高度為原本的 0.15（原為 0.12）
 PALETTE_X_PADDING_RATIO = 0.1
-FONT_SIZE = 150
 
 # RGB → CMYK
 def rgb_to_cmyk(r, g, b):
@@ -43,11 +44,13 @@ def overlay_palette(image_path, output_path):
     colors = extract_colors(img_rgb, NUM_COLORS)
 
     pil_img = Image.fromarray(img_rgb)
+    width, height = pil_img.size
+    dynamic_font_size = max(20, min(int(width * 0.045), 80))  # 根據影像寬度設定動態字體大小，對高解析度給更大字體，最大不超過80
+
     # 疊加一層透明黑色使背景變暗
     overlay = Image.new("RGBA", pil_img.size, (0, 0, 0, 120))
     pil_img = Image.alpha_composite(pil_img.convert("RGBA"), overlay)
     draw = ImageDraw.Draw(pil_img)
-    width, height = pil_img.size
 
     palette_width = int(width * PALETTE_WIDTH_RATIO)
     palette_height = int(height * PALETTE_HEIGHT_RATIO)
@@ -58,10 +61,14 @@ def overlay_palette(image_path, output_path):
 
     # 載入字體
     try:
-        font = ImageFont.truetype("arial.ttf", FONT_SIZE)
+        # 優先使用系統中的襯線字體，若無則使用預設
+        font = ImageFont.truetype("Times New Roman.ttf", dynamic_font_size)
     except:
-        font = ImageFont.load_default()
-        FONT_SIZE = 20  # Approximate size for default bitmap font
+        try:
+            font = ImageFont.truetype("Times.ttf", dynamic_font_size)
+        except:
+            font = ImageFont.load_default()
+            dynamic_font_size = 20
 
     for i, color in enumerate(colors):
         r, g, b = color
