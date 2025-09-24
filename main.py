@@ -106,20 +106,6 @@ def overlay_palette(image_path, output_path):
         y_bottom = y_top + palette_height
 
         x_start = (width - palette_width) // 2
-        # 畫色塊
-        draw.rounded_rectangle(
-            [x_start, y_top, x_start + palette_width, y_top + palette_height],
-            radius=15,
-            fill=(r, g, b)
-        )
-        # 添加輕微陰影邊框（使用半透明深灰色）
-        draw.rounded_rectangle(
-            [x_start, y_top, x_start + palette_width, y_top + palette_height],
-            radius=15,
-            outline=(0, 0, 0, 20),  # 深灰色半透明
-            width=0
-        )
-
         # judge text's color based on brighness (YIQ)
         brightness = r * 0.299 + g * 0.587 + b * 0.114
         text_color = (255, 255, 255) if brightness < 128 else (0, 0, 0)
@@ -138,8 +124,28 @@ def overlay_palette(image_path, output_path):
             if line_width > max_line_width:
                 max_line_width = line_width
 
-        total_text_height = sum(line_heights) + (len(combined_lines) - 1) * 16  # 再加大行距
+        # 保證色塊高度至少比文字總高多出 40px（上下各 20）
+        min_palette_height = sum(line_heights) + (len(combined_lines) - 1) * 20 + 40
+        if palette_height < min_palette_height:
+            palette_height = min_palette_height
+            y_bottom = y_top + palette_height
+
+        total_text_height = sum(line_heights) + (len(combined_lines) - 1) * 20  # 再加大行距
         text_start_y = y_top + (palette_height - total_text_height) // 2
+
+        # 畫色塊
+        draw.rounded_rectangle(
+            [x_start, y_top, x_start + palette_width, y_bottom],
+            radius=15,
+            fill=(r, g, b)
+        )
+        # 添加輕微陰影邊框（使用半透明深灰色）
+        draw.rounded_rectangle(
+            [x_start, y_top, x_start + palette_width, y_bottom],
+            radius=15,
+            outline=(0, 0, 0, 20),  # 深灰色半透明
+            width=0
+        )
 
         for idx, (line, line_font) in enumerate(combined_lines):
             try:
@@ -148,7 +154,7 @@ def overlay_palette(image_path, output_path):
             except AttributeError:
                 line_width, _ = draw.textsize(line, font=line_font)
 
-            text_y = text_start_y + sum(line_heights[:idx]) + idx * 16  # 同步加大行距
+            text_y = text_start_y + sum(line_heights[:idx]) + idx * 20  # 同步加大行距
 
             if idx == 0:
                 # 左對齊
