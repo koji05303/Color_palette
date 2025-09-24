@@ -7,11 +7,12 @@ from math import sqrt
 
 ## settings index
 INPUT_IMAGE_PATH = input("請輸入圖片路徑：") + ".jpg"
-OUTPUT_IMAGE_PATH = "output/palette_overlay_result.png"
+OUTPUT_IMAGE_PATH = "output/s_overlay_result.png"
 NUM_COLORS = 5
 PALETTE_WIDTH_RATIO = 0.42
 PALETTE_HEIGHT_RATIO = 0.12 
 PALETTE_X_PADDING_RATIO = 0.1
+color_df = pd.read_csv("colors.csv", header=None, names=["id", "name", "hex", "R", "G", "B"])
 
 # RGB 2 CMYK
 def rgb_to_cmyk(r, g, b):
@@ -36,22 +37,19 @@ def extract_colors(image, n_colors=5):
 
 # 主程式
 def overlay_palette(image_path, output_path):
-    color_df = pd.read_csv("colors.csv", sep="\t", header=None, names=["id", "name", "hex", "R", "G", "B"])
     def closest_color_name(r, g, b):
-        min_distance = float('inf')
-        closest_name = "Unknown"
-        for i in range(len(color_df)):
-            try:
-                dr = abs(r - int(color_df.loc[i, "R"]))
-                dg = abs(g - int(color_df.loc[i, "G"]))
-                db = abs(b - int(color_df.loc[i, "B"]))
-                dist = dr + dg + db
-                if dist < min_distance:
-                    min_distance = dist
-                    closest_name = str(color_df.loc[i, "name"])
-            except:
-                continue
-        return closest_name
+        try:
+            rgb = np.array([r, g, b])
+            palette = color_df[['R', 'G', 'B']].to_numpy()
+            # 計算每一列與 (r,g,b) 的歐式距離
+            distances = np.linalg.norm(palette - rgb, axis=1)
+            closest_index = np.argmin(distances)
+            name = color_df.iloc[closest_index]["name"]
+            print(f"比對中: R={r}, G={g}, B={b} → 最近色彩名稱為: {name}")
+            return name
+        except Exception as e:
+            print(f"比對錯誤: R={r}, G={g}, B={b}, error: {e}")
+            return "Unknown"
     original = cv2.imread(image_path)
     if original is None:
         print("XXX 無法讀取圖片")
@@ -61,10 +59,10 @@ def overlay_palette(image_path, output_path):
 
     pil_img = Image.fromarray(img_rgb)
     width, height = pil_img.size
-    dynamic_font_size = max(1, min(int(width * 0.025), 150))  ###### 文字大小
+    dynamic_font_size = max(1, min(int(width * 0.020), 160))  ###### 文字大小
 
     # 疊加一層透明黑色使背景變暗
-    overlay = Image.new("RGBA", pil_img.size, (0, 0, 0, 120))
+    overlay = Image.new("RGBA", pil_img.size, (0, 0, 0, 85))
     pil_img = Image.alpha_composite(pil_img.convert("RGBA"), overlay)
     draw = ImageDraw.Draw(pil_img)
 
@@ -84,7 +82,15 @@ def overlay_palette(image_path, output_path):
             font = ImageFont.truetype("Times.ttf", dynamic_font_size)
         except:
             font = ImageFont.load_default()
-            dynamic_font_size = 20
+            dynamic_font_size = 17
+
+    try:
+        font_title = ImageFont.truetype("Times New Roman.ttf", dynamic_font_size + 16)
+    except:
+        try:
+            font_title = ImageFont.truetype("Times.ttf", dynamic_font_size + 16)
+        except:
+            font_title = ImageFont.load_default()
 
     for i, color in enumerate(colors):
         r, g, b = color
@@ -93,8 +99,8 @@ def overlay_palette(image_path, output_path):
         cmyk = rgb_to_cmyk(r, g, b)
         hex_text = f"{hex_code}"
         rgb_text = f"RGB: {r},{g},{b}"
-        cmyk_text = f"CMYK: {cmyk[0]}%,{cmyk[1]}%,{cmyk[2]}%,{cmyk[3]}%"
-        combined_lines = [name_text, hex_text, rgb_text, cmyk_text]
+        cmyk_text = f"CMYK: {cmyk[0]}%, {cmyk[1]}%, {cmyk[2]}%, {cmyk[3]}%"
+        combined_lines = [(name_text, font_title), (hex_text, font), (rgb_text, font), (cmyk_text, font)]
 
         y_top = start_y + i * (palette_height + padding_y)
         y_bottom = y_top + palette_height
@@ -106,6 +112,13 @@ def overlay_palette(image_path, output_path):
             radius=15,
             fill=(r, g, b)
         )
+        # 添加輕微陰影邊框（使用半透明深灰色）
+        draw.rounded_rectangle(
+            [x_start, y_top, x_start + palette_width, y_top + palette_height],
+            radius=15,
+            outline=(0, 0, 0, 20),  # 深灰色半透明
+            width=0
+        )
 
         # judge text's color based on brighness (YIQ)
         brightness = r * 0.299 + g * 0.587 + b * 0.114
@@ -114,32 +127,40 @@ def overlay_palette(image_path, output_path):
         # 計算每行文字高度與最大寬度
         line_heights = []
         max_line_width = 0
-        for line in combined_lines:
+        for line, line_font in combined_lines:
             try:
-                bbox = draw.textbbox((0, 0), line, font=font)
+                bbox = draw.textbbox((0, 0), line, font=line_font)
                 line_width = bbox[2] - bbox[0]
                 line_height = bbox[3] - bbox[1]
             except AttributeError:
-                line_width, line_height = draw.textsize(line, font=font)
+                line_width, line_height = draw.textsize(line, font=line_font)
             line_heights.append(line_height)
             if line_width > max_line_width:
                 max_line_width = line_width
 
-        total_text_height = sum(line_heights) + (len(combined_lines) - 1) * 8  # 加上行距
+        total_text_height = sum(line_heights) + (len(combined_lines) - 1) * 16  # 再加大行距
         text_start_y = y_top + (palette_height - total_text_height) // 2
 
-        for idx, line in enumerate(combined_lines):
+        for idx, (line, line_font) in enumerate(combined_lines):
             try:
-                bbox = draw.textbbox((0, 0), line, font=font)
+                bbox = draw.textbbox((0, 0), line, font=line_font)
                 line_width = bbox[2] - bbox[0]
             except AttributeError:
-                line_width, _ = draw.textsize(line, font=font)
-            text_x = x_start + int(palette_width * 0.05)
-            text_y = text_start_y + sum(line_heights[:idx]) + idx * 8
-            draw.text((text_x, text_y), line, fill=text_color, font=font)
+                line_width, _ = draw.textsize(line, font=line_font)
+
+            text_y = text_start_y + sum(line_heights[:idx]) + idx * 16  # 同步加大行距
+
+            if idx == 0:
+                # 左對齊
+                text_x = x_start + int(palette_width * 0.05)
+            else:
+                # 右對齊
+                text_x = x_start + palette_width - line_width - int(palette_width * 0.05)
+
+            draw.text((text_x, text_y), line, fill=text_color, font=line_font)
 
     pil_img.save(output_path)
-    print(f"=========完成輸出：{output_path}")
+    print(f"======完成輸出：{output_path}")
 
 if __name__ == "__main__":
     overlay_palette(INPUT_IMAGE_PATH, OUTPUT_IMAGE_PATH)
